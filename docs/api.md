@@ -106,7 +106,7 @@ Analyze an audio file for fraud detection.
 
 ### 3. Analyze Text
 
-Analyze a text transcript for fraud detection.
+Analyze a text transcript for fraud detection. Also supports base64-encoded audio for automated evaluation systems.
 
 **Endpoint:** `POST /analyze-text`
 
@@ -114,12 +114,29 @@ Analyze a text transcript for fraud detection.
 - `X-API-Key: fraud_detection_api_key_2026`
 - `Content-Type: application/json`
 
-**Request Body:**
+**Request Body (Text Analysis):**
 ```json
 {
   "text": "Hello, this is Microsoft technical support. We have detected suspicious activity on your computer..."
 }
 ```
+
+**Request Body (Automated Evaluation - Base64 Audio):**
+```json
+{
+  "language": "en",
+  "audio_format": "wav", 
+  "audio_base64": "UklGRiQIAABXQVZFZm10IBAAAAAB..."
+}
+```
+
+**Parameters:**
+- `text` (string, optional): Text transcript to analyze
+- `language` (string, optional): Language hint for audio processing (en, hi, te)
+- `audio_format` (string, optional): Audio format (wav, mp3, mp4, m4a, flac, ogg)
+- `audio_base64` (string, optional): Base64-encoded audio data
+
+**Note:** For automated evaluation systems, provide `audio_base64` instead of `text`. The system will decode the audio, transcribe it to text, and analyze for fraud.
 
 **Response:**
 ```json
@@ -291,6 +308,14 @@ curl -X POST http://localhost:8081/api/v1/analyze-text \
   -H "X-API-Key: fraud_detection_api_key_2026" \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello, this is Microsoft support. Your computer has a virus."}'
+```
+
+**Analyze Base64 Audio (Automated Evaluation):**
+```bash
+curl -X POST http://localhost:8081/api/v1/analyze-text \
+  -H "X-API-Key: fraud_detection_api_key_2026" \
+  -H "Content-Type: application/json" \
+  -d '{"language": "en", "audio_format": "wav", "audio_base64": "UklGRiQIAABXQVZFZm10IBAAAAAB..."}'
 ```
 
 **Analyze Audio:**

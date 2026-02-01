@@ -6,6 +6,7 @@ Offline-first fraud detection system for phone call analysis
 
 import os
 import json
+import base64
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -122,54 +123,82 @@ def analyze_audio():
 
 @app.route('/api/v1/analyze-text', methods=['POST'])
 @require_api_key
-@app.route('/api/v1/analyze-text', methods=['POST'])
-@require_api_key
 def analyze_text():
-    """Analyze text OR audio transcript for fraud detection"""
+    """Analyze text transcript or base64 audio for fraud detection"""
     try:
-        data = request.get_json() or {}
-
-        text = data.get("text")
-
-        # 🧠 If text is missing, try audio base64
-        if not text:
-            audio_base64 = data.get("audio_base64") or data.get("audio")
-
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        text = data.get('text')
+        audio_processed = False
+        
+        # Check if this is a base64 audio request for automated evaluation
+        if not text and ('audio_base64' in data or 'language' in data or 'audio_format' in data):
+            # Handle base64 audio input for automated evaluation systems
+            audio_base64 = data.get('audio_base64')
+            audio_format = data.get('audio_format', 'wav')
+            language = data.get('language', 'en')  # Optional language hint
+            
             if not audio_base64:
                 return jsonify({
-                    "error": "No text or audio provided",
-                    "message": "Provide either text or base64-encoded audio"
+                    'error': 'No audio_base64 provided',
+                    'message': 'For automated evaluation, provide audio_base64 field'
                 }), 400
-
-            # Decode base64 audio
-            import base64
-            audio_bytes = base64.b64decode(audio_base64)
-
-            # Save temp audio file
-            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], "temp_audio.wav")
-
-            with open(temp_path, "wb") as f:
-                f.write(audio_bytes)
-
-            # Convert speech to text
-            text = speech_processor.process_audio(temp_path)
-
-            # Cleanup
-            os.remove(temp_path)
-
+            
+            try:
+                # Decode base64 audio safely
+                import base64
+                audio_bytes = base64.b64decode(audio_base64)
+                
+                # Create temporary file with proper extension
+                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                file_extension = audio_format.lower().replace('.', '')
+                if file_extension not in ['wav', 'mp3', 'mp4', 'm4a', 'flac', 'ogg']:
+                    file_extension = 'wav'  # Default fallback
+                
+                temp_filename = f"eval_audio_{get_current_timestamp().replace(':', '-').replace('.', '-')}.{file_extension}"
+                temp_filepath = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
+                
+                # Write audio bytes to temporary file
+                with open(temp_filepath, 'wb') as f:
+                    f.write(audio_bytes)
+                
+                try:
+                    # Convert speech to text using existing offline processing
+                    text = speech_processor.process_audio(temp_filepath)
+                    audio_processed = True
+                    
+                finally:
+                    # Always clean up temporary file
+                    if os.path.exists(temp_filepath):
+                        os.remove(temp_filepath)
+                        
+            except Exception as audio_error:
+                logger.error(f"Error processing base64 audio: {str(audio_error)}")
+                return jsonify({
+                    'error': 'Audio processing failed',
+                    'message': 'Unable to decode or process the provided audio data'
+                }), 400
+        
+        # Validate that we have text to analyze
+        if not text:
+            return jsonify({
+                'error': 'No text provided',
+                'message': 'Provide either text field or audio_base64 for automated evaluation'
+            }), 400
+        
         if not text.strip():
-            return jsonify({'error': 'Empty transcript after processing'}), 400
-
-        # 🔍 Analyze fraud
+            return jsonify({'error': 'Empty text provided'}), 400
+        
+        # Analyze for fraud using existing pipeline
         result = fraud_detector.analyze_text(text)
-        result["audio_processed"] = True if "audio_base64" in data else False
-        result["transcript"] = text
-
+        result['audio_processed'] = audio_processed
+        
         return jsonify(result)
-
+        
     except Exception as e:
-        logger.error(f"Error analyzing input: {str(e)}")
+        logger.error(f"Error analyzing text: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/v1/train', methods=['POST'])
