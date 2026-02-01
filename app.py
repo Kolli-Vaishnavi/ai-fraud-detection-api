@@ -122,25 +122,54 @@ def analyze_audio():
 
 @app.route('/api/v1/analyze-text', methods=['POST'])
 @require_api_key
+@app.route('/api/v1/analyze-text', methods=['POST'])
+@require_api_key
 def analyze_text():
-    """Analyze text transcript for fraud detection"""
+    """Analyze text OR audio transcript for fraud detection"""
     try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({'error': 'No text provided'}), 400
-        
-        text = data['text']
+        data = request.get_json() or {}
+
+        text = data.get("text")
+
+        # 🧠 If text is missing, try audio base64
+        if not text:
+            audio_base64 = data.get("audio_base64") or data.get("audio")
+
+            if not audio_base64:
+                return jsonify({
+                    "error": "No text or audio provided",
+                    "message": "Provide either text or base64-encoded audio"
+                }), 400
+
+            # Decode base64 audio
+            import base64
+            audio_bytes = base64.b64decode(audio_base64)
+
+            # Save temp audio file
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], "temp_audio.wav")
+
+            with open(temp_path, "wb") as f:
+                f.write(audio_bytes)
+
+            # Convert speech to text
+            text = speech_processor.process_audio(temp_path)
+
+            # Cleanup
+            os.remove(temp_path)
+
         if not text.strip():
-            return jsonify({'error': 'Empty text provided'}), 400
-        
-        # Analyze for fraud
+            return jsonify({'error': 'Empty transcript after processing'}), 400
+
+        # 🔍 Analyze fraud
         result = fraud_detector.analyze_text(text)
-        result['audio_processed'] = False
-        
+        result["audio_processed"] = True if "audio_base64" in data else False
+        result["transcript"] = text
+
         return jsonify(result)
-        
+
     except Exception as e:
-        logger.error(f"Error analyzing text: {str(e)}")
+        logger.error(f"Error analyzing input: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/v1/train', methods=['POST'])
