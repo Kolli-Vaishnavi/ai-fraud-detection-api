@@ -81,4 +81,7 @@ temp_uploads/
 logs/
 *.pyc
 .env
+temp_audio_b64.txt
+test_base64_audio.py
+BASE64_AUDIO_IMPLEMENTATION.md
 
